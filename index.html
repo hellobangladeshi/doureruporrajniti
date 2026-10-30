@@ -8,25 +8,22 @@
     <!-- Three.js লাইব্রেরি -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
-    <!-- CSS স্টাইল -->
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            user-select: none; /* টেক্সট সিলেক্ট হওয়া বন্ধ করতে */
+            user-select: none;
         }
 
         body {
             overflow: hidden;
             background-color: #87CEEB;
-            touch-action: none; /* মোবাইলে স্ক্রল বন্ধ করতে */
+            touch-action: none;
         }
 
-        canvas {
-            display: block;
-        }
+        canvas { display: block; }
 
         #ui-container {
             position: absolute;
@@ -45,6 +42,13 @@
             font-weight: bold;
             color: #fff;
             text-shadow: 2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000;
+        }
+
+        #high-score {
+            font-size: 18px;
+            color: #FFD700;
+            text-shadow: 1px 1px 0 #000;
+            margin-top: 5px;
         }
 
         #instructions {
@@ -68,6 +72,7 @@
             color: white;
             border: 3px solid #f44336;
             z-index: 10;
+            box-shadow: 0 0 20px rgba(244, 67, 54, 0.5);
         }
 
         #game-over h1 {
@@ -94,142 +99,165 @@
 
         #restart-btn:hover {
             background-color: #45a049;
+            transform: scale(1.05);
         }
 
-        .hidden {
-            display: none !important;
-        }
+        .hidden { display: none !important; }
     </style>
 </head>
 <body>
 
-    <!-- গেমের স্কোর এবং UI -->
     <div id="ui-container">
-        <div id="score-board">স্কোর: <span id="score">0</span></div>
+        <div>
+            <div id="score-board">স্কোর: <span id="score">0</span></div>
+            <div id="high-score">সর্বোচ্চ স্কোর: <span id="high-score-val">0</span></div>
+        </div>
         <div id="instructions">
-            <p>কম্পিউটারে: ← → বা A/D চাপুন</p>
-            <p>মোবাইলে: ডানে-বামে সোয়াইপ করুন</p>
+            <p>কম্পিউটারে: ← → বা A/D</p>
+            <p>মোবাইলে: ডানে-বামে সোয়াইপ</p>
         </div>
     </div>
 
-    <!-- গেম ওভার স্ক্রিন -->
     <div id="game-over" class="hidden">
         <h1>খেলা শেষ!</h1>
         <p>আপনি ধরা পড়েছেন!</p>
         <button id="restart-btn">আবার চেষ্টা করুন</button>
     </div>
 
-    <!-- জাভাস্ক্রিপ্ট গেম লজিক -->
     <script>
         // ১. বেসিক সেটআপ (Scene, Camera, Renderer)
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87CEEB);
         scene.fog = new THREE.Fog(0x87CEEB, 50, 100);
 
-        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.set(0, 6, 10);
+        const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 7, 12); // ক্যামেরা একটু উঁচুতে
         camera.lookAt(0, 0, -10);
 
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         document.body.appendChild(renderer.domElement);
 
         // ২. আলো (Lighting)
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
         scene.add(ambientLight);
 
         const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
-        dirLight.position.set(10, 20, 10);
+        dirLight.position.set(20, 30, 10);
         dirLight.castShadow = true;
+        dirLight.shadow.camera.left = -20;
+        dirLight.shadow.camera.right = 20;
+        dirLight.shadow.camera.top = 20;
+        dirLight.shadow.camera.bottom = -20;
         scene.add(dirLight);
 
-        // ৩. অ্যাসেট লোডার (Textures)
+        // ৩. অ্যাসেট লোডার
         const textureLoader = new THREE.TextureLoader();
 
-        // ৪. প্লেয়ার (CNG অটোরিকশা)
-        const playerGeometry = new THREE.PlaneGeometry(2.5, 3);
-        const cngTexture = textureLoader.load('assets/cng.png');
-        const playerMaterial = new THREE.MeshStandardMaterial({ 
-            map: cngTexture, 
-            transparent: true,
-            side: THREE.DoubleSide 
-        });
-        const player = new THREE.Mesh(playerGeometry, playerMaterial);
-        player.position.y = 1.5;
-        player.position.z = 0;
-        player.castShadow = true;
-        scene.add(player);
+        // --- প্লেয়ার (CNG অটোরিকশা) ---
+        // যেহেতু ২ডি ছবি, তাই একটি ৩ডি বক্স (গাড়ির বডি) বানিয়ে তার ওপরে ২ডি ছবি বসানো হয়েছে
+        const playerGroup = new THREE.Group();
+        
+        // গাড়ির বডি (সবুজ রঙ)
+        const carBodyGeo = new THREE.BoxGeometry(2, 2, 3);
+        const carBodyMat = new THREE.MeshStandardMaterial({ color: 0x2e7d32 });
+        const carBody = new THREE.Mesh(carBodyGeo, carBodyMat);
+        carBody.position.y = 1;
+        carBody.castShadow = true;
+        playerGroup.add(carBody);
 
-        // ৫. রাস্তা (Road)
+        // গাড়ির সামনের গ্লাস (কালো)
+        const glassGeo = new THREE.BoxGeometry(1.8, 1, 0.1);
+        const glassMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+        const glass = new THREE.Mesh(glassGeo, glassMat);
+        glass.position.set(0, 1.5, -1.51);
+        playerGroup.add(glass);
+
+        // গাড়ির চাকা (৪টি)
+        const wheelGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.3, 16);
+        const wheelMat = new THREE.MeshStandardMaterial({ color: 0x000000 });
+        const wheelPositions = [
+            [-1.05, 0.4, -1], [1.05, 0.4, -1], // সামনের চাকা
+            [-1.05, 0.4, 1], [1.05, 0.4, 1]    // পেছনের চাকা
+        ];
+        wheelPositions.forEach(pos => {
+            const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+            wheel.rotation.z = Math.PI / 2;
+            wheel.position.set(...pos);
+            playerGroup.add(wheel);
+        });
+
+        playerGroup.position.set(0, 0, 0);
+        scene.add(playerGroup);
+
+        // --- রাস্তা (Road) ---
         const roadTexture = textureLoader.load('assets/road.jpg');
         roadTexture.wrapS = THREE.RepeatWrapping;
         roadTexture.wrapT = THREE.RepeatWrapping;
-        roadTexture.repeat.set(1, 10);
+        roadTexture.repeat.set(1, 15);
+        roadTexture.anisotropy = renderer.capabilities.getMaxAnisotropy(); // টেক্সচার স্পষ্ট করতে
 
-        const roadGeometry = new THREE.PlaneGeometry(12, 200);
-        const roadMaterial = new THREE.MeshStandardMaterial({ map: roadTexture });
+        const roadGeometry = new THREE.PlaneGeometry(12, 300);
+        const roadMaterial = new THREE.MeshStandardMaterial({ map: roadTexture, roughness: 0.8 });
         const road = new THREE.Mesh(roadGeometry, roadMaterial);
         road.rotation.x = -Math.PI / 2;
         road.position.y = 0;
         road.receiveShadow = true;
         scene.add(road);
 
-        // ৬. ভবন (Buildings)
+        // --- ভবন (Buildings) ---
         const buildingTexture = textureLoader.load('assets/building.png');
-        const buildingMaterial = new THREE.MeshStandardMaterial({ 
-            map: buildingTexture, 
-            transparent: true 
-        });
+        const buildingMaterial = new THREE.MeshStandardMaterial({ map: buildingTexture, transparent: true });
 
         const buildings = [];
-        for (let i = 0; i < 30; i++) {
-            // ডান পাশ
-            const b1Geo = new THREE.PlaneGeometry(6, 10);
-            const b1 = new THREE.Mesh(b1Geo, buildingMaterial);
-            b1.position.set(9, 5, -i * 20);
-            b1.rotation.y = -Math.PI / 4;
-            b1.castShadow = true;
+        for (let i = 0; i < 40; i++) {
+            // ডান পাশের ভবন
+            const b1 = new THREE.Mesh(new THREE.PlaneGeometry(8, 12), buildingMaterial);
+            b1.position.set(10, 6, -i * 15);
+            b1.rotation.y = -Math.PI / 6;
             scene.add(b1);
             buildings.push(b1);
 
-            // বাম পাশ
-            const b2Geo = new THREE.PlaneGeometry(6, 10);
-            const b2 = new THREE.Mesh(b2Geo, buildingMaterial);
-            b2.position.set(-9, 5, -i * 20);
-            b2.rotation.y = Math.PI / 4;
-            b2.castShadow = true;
+            // বাম পাশের ভবন
+            const b2 = new THREE.Mesh(new THREE.PlaneGeometry(8, 12), buildingMaterial);
+            b2.position.set(-10, 6, -i * 15);
+            b2.rotation.y = Math.PI / 6;
             scene.add(b2);
             buildings.push(b2);
         }
 
-        // ৭. বাধা (Obstacles)
+        // --- বাধা (Obstacles) ---
         const obstacleTexture = textureLoader.load('assets/barricade.png');
-        const obstacleMaterial = new THREE.MeshStandardMaterial({ 
-            map: obstacleTexture, 
-            transparent: true 
-        });
+        const obstacleMaterial = new THREE.MeshStandardMaterial({ map: obstacleTexture, transparent: true });
+        
         let obstacles = [];
-        const laneWidth = 3.5;
+        const laneWidth = 3.5; // লেনের সাইজ
 
         function spawnObstacle() {
-            const geo = new THREE.PlaneGeometry(2.5, 1.5);
+            // ৩টি লেনের যেকোনো একটিতে বাধা তৈরি হবে
+            const lane = Math.floor(Math.random() * 3) - 1; 
+            const geo = new THREE.PlaneGeometry(3, 2); // বাধার সাইজ
             const obs = new THREE.Mesh(geo, obstacleMaterial);
             
-            const lane = Math.floor(Math.random() * 3) - 1; 
-            obs.position.set(lane * laneWidth, 0.75, -100);
+            obs.position.set(lane * laneWidth, 1, -150); // দূর থেকে আসবে
             scene.add(obs);
             obstacles.push(obs);
         }
 
-        // ৮. গেম লজিক (Movement & Controls)
-        let speed = 0.5;
+        // ৪. গেম ভ্যারিয়েবল এবং স্টেট
+        let speed = 0.6;
         let score = 0;
         let isGameOver = false;
-        let currentLane = 0;
+        let currentLane = 0; // -1 = বাম, 0 = মাঝখানে, 1 = ডান
         let targetX = 0;
+        
+        // হাই স্কোর (লোকাল স্টোরেজ থেকে)
+        let highScore = parseInt(localStorage.getItem('dourerHighScore')) || 0;
+        document.getElementById('high-score-val').innerText = highScore;
 
-        // কন্ট্রোল (কীবোর্ড)
+        // ৫. কন্ট্রোলস
         window.addEventListener('keydown', (e) => {
             if (isGameOver) return;
             if ((e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') && currentLane > -1) {
@@ -240,7 +268,7 @@
             targetX = currentLane * laneWidth;
         });
 
-        // কন্ট্রোল (মোবাইল টাচ)
+        // মোবাইল টাচ কন্ট্রোল
         let touchStartX = 0;
         window.addEventListener('touchstart', (e) => { touchStartX = e.touches[0].clientX; });
         window.addEventListener('touchend', (e) => {
@@ -251,64 +279,83 @@
             targetX = currentLane * laneWidth;
         });
 
-        // ৯. অ্যানিমেশন লুপ
+        // ৬. অ্যানিমেশন লুপ
         function animate() {
             requestAnimationFrame(animate);
 
             if (!isGameOver) {
-                player.position.x += (targetX - player.position.x) * 0.15;
-                roadTexture.offset.y -= speed * 0.05;
+                // গাড়ির স্মুথ মুভমেন্ট এবং টিল্ট (বাঁক নেওয়ার অনুভূতি)
+                playerGroup.position.x += (targetX - playerGroup.position.x) * 0.15;
+                // গাড়ি বাঁ দিকে গেলে বাঁ দিকে হেলবে, ডান দিকে গেলে ডান দিকে
+                playerGroup.rotation.z = (playerGroup.position.x - targetX) * 0.05;
 
+                // রাস্তা এবং ভবন এগিয়ে যাওয়া
+                roadTexture.offset.y -= speed * 0.05;
+                
                 buildings.forEach(b => {
                     b.position.z += speed;
-                    if (b.position.z > 10) b.position.z -= 600; 
+                    if (b.position.z > 15) b.position.z -= 600; 
                 });
 
+                // বাধা এগিয়ে আসা এবং সংঘর্ষ চেক
                 for (let i = obstacles.length - 1; i >= 0; i--) {
                     let obs = obstacles[i];
                     obs.position.z += speed;
 
-                    if (Math.abs(obs.position.z - player.position.z) < 2 && 
-                        Math.abs(obs.position.x - player.position.x) < 1.5) {
+                    // সংঘর্ষ (Collision) - খুব কাছাকাছি এলে গেম ওভার
+                    if (Math.abs(obs.position.z - playerGroup.position.z) < 2 && 
+                        Math.abs(obs.position.x - playerGroup.position.x) < 1.5) {
                         gameOver();
                     }
 
+                    // বাধা পարչিয়ে গেলে স্কোর বাড়বে এবং বাধা মুছে যাবে
                     if (obs.position.z > 10) {
                         scene.remove(obs);
                         obstacles.splice(i, 1);
                         score += 10;
                         document.getElementById('score').innerText = score;
-                        speed += 0.02;
+                        speed += 0.01; // গেম ধীরে ধীরে কঠিন হবে
                     }
                 }
 
+                // র‍্যান্ডম বাধা তৈরি
                 if (Math.random() < 0.02) spawnObstacle();
             }
 
             renderer.render(scene, camera);
         }
 
-        // ১০. গেম ওভার এবং রিস্টার্ট
+        // ৭. গেম ওভার ফাংশন
         function gameOver() {
             isGameOver = true;
             document.getElementById('game-over').classList.remove('hidden');
+            
+            // হাই স্কোর আপডেট
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('dourerHighScore', highScore);
+                document.getElementById('high-score-val').innerText = highScore;
+            }
         }
 
+        // ৮. রিস্টার্ট বাটন
         document.getElementById('restart-btn').addEventListener('click', () => {
             isGameOver = false;
             score = 0;
-            speed = 0.5;
+            speed = 0.6;
             currentLane = 0;
             targetX = 0;
-            player.position.x = 0;
+            playerGroup.position.x = 0;
+            playerGroup.rotation.z = 0;
             document.getElementById('score').innerText = score;
             document.getElementById('game-over').classList.add('hidden');
             
+            // সব বাধা মুছে ফেলা
             obstacles.forEach(obs => scene.remove(obs));
             obstacles = [];
         });
 
-        // রেসপন্সিভ উইন্ডো
+        // ৯. রেসপন্সিভ
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
