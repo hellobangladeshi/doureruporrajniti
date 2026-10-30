@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>দৌড়ের উপর রাজনীতি</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: linear-gradient(180deg, #1a237e 0%, #283593 50%, #3949ab 100%);
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; min-height: 100vh;
+    font-family: 'Segoe UI', 'Noto Sans Bengali', sans-serif;
+    overflow: hidden;
+  }
+  #game-container {
+    position: relative;
+    width: 90vw; max-width: 800px;
+    background: #e8f5e9;
+    border-radius: 12px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+    overflow: hidden;
+  }
+  #hud {
+    position: absolute; top: 12px; left: 12px; right: 12px;
+    display: flex; justify-content: space-between;
+    color: #1b5e20; font-weight: bold; font-size: 18px;
+    z-index: 10; text-shadow: 1px 1px 0 #fff;
+  }
+  canvas { display: block; width: 100%; height: auto; }
+  #start-screen, #gameover-screen {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: rgba(26, 35, 126, 0.92);
+    color: #fff; text-align: center; padding: 20px;
+    z-index: 20;
+  }
+  #start-screen h1 { font-size: clamp(24px, 5vw, 40px); margin-bottom: 8px; }
+  #start-screen p { margin-bottom: 20px; opacity: 0.85; }
+  button {
+    padding: 12px 32px; font-size: 18px; font-weight: bold;
+    background: #ffc107; color: #1a237e; border: none;
+    border-radius: 30px; cursor: pointer; transition: transform 0.2s;
+  }
+  button:hover { transform: scale(1.05); }
+  #gameover-screen { display: none; }
+  #gameover-screen h2 { font-size: 28px; margin-bottom: 12px; color: #ffc107; }
+  #final-score { font-size: 20px; margin-bottom: 20px; }
+  .hint { font-size: 13px; margin-top: 14px; opacity: 0.7; }
+</style>
+</head>
+<body>
+
+<div id="game-container">
+  <div id="hud">
+    <span>ভোট: <span id="score">0</span></span>
+    <span id="highscore-label">সর্বোচ্চ: 0</span>
+  </div>
+
+  <div id="start-screen">
+    <h1>দৌড়ের উপর রাজনীতি</h1>
+    <p>স্ক্রিন ট্যাপ করুন বা স্পেস চাপুন লাফানোর জন্য</p>
+    <button id="start-btn">শুরু করুন</button>
+    <div class="hint">⚠️ এটি একটি ব্যঙ্গাত্মক গেম, বিনোদনের উদ্দেশ্যে</div>
+  </div>
+
+  <div id="gameover-screen">
+    <h2>খেলা শেষ!</h2>
+    <div id="final-score">আপনার ভোট: 0</div>
+    <button id="restart-btn">আবার চেষ্টা করুন</button>
+  </div>
+
+  <canvas id="gameCanvas" width="800" height="400"></canvas>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+const highscoreLabel = document.getElementById('highscore-label');
+const startScreen = document.getElementById('start-screen');
+const gameoverScreen = document.getElementById('gameover-screen');
+const finalScoreEl = document.getElementById('final-score');
+
+// গেম স্টেট
+let running = false;
+let score = 0;
+let highScore = parseInt(localStorage.getItem('dourerHighScore') || '0');
+let frame = 0;
+let speed = 5;
+let gravity = 0.6;
+let jumpPower = -11;
+
+// প্লেয়ার
+const player = {
+  x: 80, y: 0, width: 40, height: 50,
+  vy: 0, jumping: false, onGround: true
+};
+
+// বাধা
+let obstacles = [];
+
+function resetGame() {
+  score = 0; frame = 0; speed = 5; obstacles = [];
+  player.y = canvas.height - player.height - 40;
+  player.vy = 0; player.jumping = false; player.onGround = true;
+  scoreEl.textContent = '0';
+  highscoreLabel.textContent = 'সর্বোচ্চ: ' + highScore;
+}
+
+function startGame() {
+  resetGame();
+  startScreen.style.display = 'none';
+  gameoverScreen.style.display = 'none';
+  running = true;
+  requestAnimationFrame(loop);
+}
+
+function gameOver() {
+  running = false;
+  if (score > highScore) {
+    highScore = score;
+    localStorage.setItem('dourerHighScore', highScore);
+  }
+  finalScoreEl.textContent = 'আপনার ভোট: ' + score;
+  gameoverScreen.style.display = 'flex';
+}
+
+function jump() {
+  if (!running) return;
+  if (player.onGround) {
+    player.vy = jumpPower;
+    player.jumping = true;
+    player.onGround = false;
+  }
+}
+
+function update() {
+  frame++;
+  score = Math.floor(frame / 6);
+  scoreEl.textContent = score;
+  speed = 5 + Math.floor(score / 50) * 0.5;
+
+  // মাধ্যাকর্ষণ
+  player.vy += gravity;
+  player.y += player.vy;
+  const groundY = canvas.height - player.height - 40;
+  if (player.y >= groundY) {
+    player.y = groundY;
+    player.vy = 0;
+    player.jumping = false;
+    player.onGround = true;
+  }
+
+  // বাধা তৈরি
+  if (frame % 90 === 0) {
+    const types = ['hurdle', 'ballot', 'camera'];
+    const type = types[Math.floor(Math.random() * types.length)];
+    obstacles.push({
+      x: canvas.width,
+      y: canvas.height - 90,
+      width: type === 'hurdle' ? 30 : 40,
+      height: type === 'hurdle' ? 50 : 35,
+      type: type
+    });
+  }
+
+  // বাধা সরানো ও সংঘর্ষ
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    const o = obstacles[i];
+    o.x -= speed;
+    if (o.x + o.width < 0) { obstacles.splice(i, 1); continue; }
+    if (
+      player.x < o.x + o.width &&
+      player.x + player.width > o.x &&
+      player.y < o.y + o.height &&
+      player.y + player.height > o.y
+    ) {
+      gameOver();
+      return;
+    }
+  }
+}
+
+function draw() {
+  // পটভূমি
+  ctx.fillStyle = '#e8f5e9';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#c8e6c9';
+  ctx.fillRect(0, canvas.height - 40, canvas.width, 40);
+
+  // মাটি
+  ctx.fillStyle = '#81c784';
+  ctx.fillRect(0, canvas.height - 40, canvas.width, 8);
+
+  // মেঘ
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  for (let i = 0; i < 3; i++) {
+    const cx = ((frame * 0.5 + i * 250) % (canvas.width + 100)) - 50;
+    ctx.beginPath();
+    ctx.arc(cx, 60 + i * 30, 25, 0, Math.PI * 2);
+    ctx.arc(cx + 25, 60 + i * 30, 20, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // প্লেয়ার (সরল চরিত্র)
+  ctx.fillStyle = '#1a237e';
+  ctx.fillRect(player.x, player.y, player.width, player.height);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(player.x + 8, player.y + 8, 8, 8);
+  ctx.fillRect(player.x + 24, player.y + 8, 8, 8);
+
+  // বাধা
+  obstacles.forEach(o => {
+    if (o.type === 'hurdle') {
+      ctx.fillStyle = '#d32f2f';
+      ctx.fillRect(o.x, o.y, o.width, o.height);
+    } else if (o.type === 'ballot') {
+      ctx.fillStyle = '#616161';
+      ctx.fillRect(o.x, o.y, o.width, o.height);
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(o.x + 5, o.y + 5, o.width - 10, o.height - 10);
+    } else {
+      ctx.fillStyle = '#f57c00';
+      ctx.fillRect(o.x, o.y, o.width, o.height);
+    }
+  });
+}
+
+function loop() {
+  if (!running) return;
+  update();
+  draw();
+  if (running) requestAnimationFrame(loop);
+}
+
+// ইভেন্ট
+document.getElementById('start-btn').addEventListener('click', startGame);
+document.getElementById('restart-btn').addEventListener('click', startGame);
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); jump(); }
+});
+canvas.addEventListener('click', jump);
+canvas.addEventListener('touchstart', e => { e.preventDefault(); jump(); });
+// মোবাইলে গেম ক্যানভাসে ট্যাপ করলে লাফাবে
+document.getElementById('game-container').addEventListener('touchstart', e => {
+  if (running) { e.preventDefault(); jump(); }
+}, { passive: false });
+
+// প্রাথমিক আঁকা
+resetGame();
+draw();
+</script>
+</body>
+</html>
